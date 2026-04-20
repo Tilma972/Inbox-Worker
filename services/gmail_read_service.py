@@ -312,7 +312,7 @@ class GmailReadService:
         headers = {
             "Authorization": f"Bearer {settings.supabase_key}",
             "Content-Type": mime_type,
-            "x-upsert": "false",
+            "x-upsert": "true",  # idempotent : même fichier → écrase sans erreur
         }
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
