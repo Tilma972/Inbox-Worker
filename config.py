@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     gmail_client_secret: str = ""
     gmail_refresh_token: str = ""
 
+    # Supabase Storage (pour stocker les pièces jointes reçues)
+    supabase_url: str = ""    # injecter via .env — ex: SUPABASE_URL=https://<ref>.supabase.co
+    supabase_key: str = ""    # service_role key (pas anon) — injecter via .env
+
     # Inter-worker auth
     worker_auth_key: str = "flowchat-internal-secret"
 

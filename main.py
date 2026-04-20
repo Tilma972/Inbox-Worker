@@ -16,6 +16,9 @@ from models import (
     DraftRequest,
     DraftResponse,
     LabelItem,
+    AttachmentContent,
+    AttachmentStoreRequest,
+    AttachmentStoreResponse,
 )
 from services import gmail_read_service
 
@@ -105,6 +108,50 @@ async def create_draft(request: DraftRequest):
     except Exception as e:
         logger.error("create draft failed: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/inbox/attachment/{message_id}/{attachment_id}", response_model=AttachmentContent)
+async def get_attachment(
+    message_id: str,
+    attachment_id: str,
+    filename: str = Query(default=None, description="Nom du fichier (optionnel, pour enrichir la réponse)"),
+    mime_type: str = Query(default=None, description="MIME type (optionnel)"),
+):
+    try:
+        logger.info("📎 get attachment message=%s att=%s", message_id, attachment_id)
+        return gmail_read_service.get_attachment(message_id, attachment_id, filename, mime_type)
+    except HttpError as e:
+        if e.resp.status == 404:
+            raise HTTPException(status_code=404, detail="Attachment not found")
+        raise HTTPException(status_code=e.resp.status, detail=str(e))
+    except Exception as e:
+        logger.error("get attachment failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/inbox/attachment/store", response_model=AttachmentStoreResponse)
+async def store_attachment(request: AttachmentStoreRequest):
+    """
+    Télécharge une PJ depuis Gmail et la stocke dans Supabase Storage.
+    Nécessite SUPABASE_URL et SUPABASE_KEY (service_role) dans .env.
+    """
+    try:
+        logger.info(
+            "💾 store attachment message=%s att=%s → %s/%s",
+            request.message_id, request.attachment_id, request.bucket, request.filename,
+        )
+        result = await gmail_read_service.store_attachment(
+            message_id=request.message_id,
+            attachment_id=request.attachment_id,
+            filename=request.filename,
+            mime_type=request.mime_type or "application/octet-stream",
+            bucket=request.bucket,
+            path_prefix=request.path_prefix,
+        )
+        return AttachmentStoreResponse(**result)
+    except Exception as e:
+        logger.error("store attachment failed: %s", e)
+        return AttachmentStoreResponse(success=False, error=str(e))
 
 
 @app.get("/inbox/labels", response_model=list[LabelItem])

@@ -4,10 +4,12 @@ Même architecture que GmailService (email-worker), scopes différents.
 """
 import base64
 import logging
+from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Optional, List, Dict, Any
 
+import httpx
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -73,6 +75,30 @@ def _extract_body(payload: Dict[str, Any]) -> Dict[str, Optional[str]]:
     return {"plain": plain, "html": html}
 
 
+def _extract_attachments(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Extrait les métadonnées des pièces jointes depuis un payload Gmail.
+    Parcourt récursivement les parts MIME pour trouver celles avec attachmentId.
+    """
+    attachments: List[Dict[str, Any]] = []
+
+    def _walk(part: Dict[str, Any]) -> None:
+        body = part.get("body", {})
+        attachment_id = body.get("attachmentId")
+        if attachment_id:
+            attachments.append({
+                "attachment_id": attachment_id,
+                "filename": part.get("filename") or None,
+                "mime_type": part.get("mimeType") or None,
+                "size": body.get("size", 0),
+            })
+        for subpart in part.get("parts", []):
+            _walk(subpart)
+
+    _walk(payload)
+    return attachments
+
+
 def _parse_message(msg: Dict[str, Any], include_body: bool = True) -> Dict[str, Any]:
     """Transforme un objet message Gmail API en dict normalisé."""
     payload = msg.get("payload", {})
@@ -100,6 +126,7 @@ def _parse_message(msg: Dict[str, Any], include_body: bool = True) -> Dict[str, 
         entry["body_plain"] = None
         entry["body_html"] = None
 
+    entry["attachments"] = _extract_attachments(payload)
     return entry
 
 
@@ -218,6 +245,76 @@ class GmailReadService:
             {"id": lbl["id"], "name": lbl["name"], "type": lbl.get("type")}
             for lbl in result.get("labels", [])
         ]
+
+    def get_attachment(
+        self, message_id: str, attachment_id: str,
+        filename: Optional[str] = None, mime_type: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Télécharge le contenu d'une PJ depuis l'API Gmail. Retourne data en base64 url-safe."""
+        service = self._get_service()
+        result = (
+            service.users()
+            .messages()
+            .attachments()
+            .get(userId="me", messageId=message_id, id=attachment_id)
+            .execute()
+        )
+        return {
+            "message_id": message_id,
+            "attachment_id": attachment_id,
+            "filename": filename,
+            "mime_type": mime_type,
+            "size": result.get("size", 0),
+            "data_base64": result.get("data", ""),
+        }
+
+    async def store_attachment(
+        self,
+        message_id: str,
+        attachment_id: str,
+        filename: str,
+        mime_type: str,
+        bucket: str,
+        path_prefix: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Télécharge une PJ Gmail et l'upload dans Supabase Storage.
+        Retourne storage_path et storage_bucket en cas de succès.
+        """
+        if not settings.supabase_url or not settings.supabase_key:
+            return {"success": False, "error": "Supabase storage non configuré (SUPABASE_URL / SUPABASE_KEY manquants)"}
+
+        # 1. Téléchargement depuis Gmail
+        raw = self.get_attachment(message_id, attachment_id, filename, mime_type)
+        data_b64 = raw["data_base64"]
+        # Gmail retourne du base64 url-safe — on décode en bytes
+        file_bytes = base64.urlsafe_b64decode(data_b64 + "==")
+
+        # 2. Construction du path de stockage
+        now = datetime.now(timezone.utc)
+        prefix = path_prefix or f"incoming/{now.year}-{now.month:02d}"
+        safe_filename = filename.replace("/", "_").replace(" ", "_")
+        storage_path = f"{prefix}/{message_id}_{safe_filename}"
+
+        # 3. Upload Supabase Storage REST API
+        upload_url = f"{settings.supabase_url}/storage/v1/object/{bucket}/{storage_path}"
+        headers = {
+            "Authorization": f"Bearer {settings.supabase_key}",
+            "Content-Type": mime_type,
+            "x-upsert": "false",
+        }
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.post(upload_url, headers=headers, content=file_bytes)
+            if resp.status_code in (200, 201):
+                return {"success": True, "storage_path": storage_path, "storage_bucket": bucket}
+            return {
+                "success": False,
+                "error": f"Supabase storage HTTP {resp.status_code}: {resp.text[:200]}",
+            }
+        except Exception as exc:
+            logger.error("store_attachment upload failed: %s", exc)
+            return {"success": False, "error": str(exc)}
 
 
 gmail_read_service = GmailReadService()

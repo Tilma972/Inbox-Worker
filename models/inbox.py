@@ -10,6 +10,38 @@ class ThreadSummary(BaseModel):
     snippet: str = ""
 
 
+class AttachmentInfo(BaseModel):
+    attachment_id: str
+    filename: Optional[str] = None
+    mime_type: Optional[str] = None
+    size: int = 0
+
+
+class AttachmentContent(BaseModel):
+    message_id: str
+    attachment_id: str
+    filename: Optional[str] = None
+    mime_type: Optional[str] = None
+    size: int = 0
+    data_base64: str
+
+
+class AttachmentStoreRequest(BaseModel):
+    message_id: str
+    attachment_id: str
+    filename: str
+    mime_type: Optional[str] = "application/octet-stream"
+    bucket: str = "pj-recues"
+    path_prefix: Optional[str] = None  # ex: "bdc-recus/2026-04"
+
+
+class AttachmentStoreResponse(BaseModel):
+    success: bool
+    storage_path: Optional[str] = None
+    storage_bucket: Optional[str] = None
+    error: Optional[str] = None
+
+
 class MessageDetail(BaseModel):
     id: str
     thread_id: str
@@ -24,6 +56,7 @@ class MessageDetail(BaseModel):
     is_auto_reply: bool = False
     internal_date: Optional[str] = None
     message_id_header: Optional[str] = None  # RFC 2822 Message-ID (for In-Reply-To)
+    attachments: List[AttachmentInfo] = []
 
 
 class ThreadDetail(BaseModel):

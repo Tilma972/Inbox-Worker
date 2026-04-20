@@ -5,6 +5,10 @@ from .inbox import (
     DraftRequest,
     DraftResponse,
     LabelItem,
+    AttachmentInfo,
+    AttachmentContent,
+    AttachmentStoreRequest,
+    AttachmentStoreResponse,
 )
 
 __all__ = [
@@ -14,4 +18,8 @@ __all__ = [
     "DraftRequest",
     "DraftResponse",
     "LabelItem",
+    "AttachmentInfo",
+    "AttachmentContent",
+    "AttachmentStoreRequest",
+    "AttachmentStoreResponse",
 ]
