@@ -275,7 +275,8 @@ class GmailReadService:
         filename: str,
         mime_type: str,
         bucket: str,
-        path_prefix: Optional[str] = None,
+        entreprise_id: Optional[str] = None,
+        sender_email: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Télécharge une PJ Gmail et l'upload dans Supabase Storage.
@@ -292,9 +293,19 @@ class GmailReadService:
 
         # 2. Construction du path de stockage
         now = datetime.now(timezone.utc)
-        prefix = path_prefix or f"incoming/{now.year}-{now.month:02d}"
+        date_folder = f"{now.year}-{now.month:02d}"
         safe_filename = filename.replace("/", "_").replace(" ", "_")
-        storage_path = f"{prefix}/{message_id}_{safe_filename}"
+
+        # Hiérarchie : {bucket}/{date}/{entreprise_id|domaine-expediteur|non-identifie}/{filename}
+        if entreprise_id:
+            folder = f"{date_folder}/{entreprise_id}"
+        elif sender_email and "@" in sender_email:
+            domain = sender_email.split("@")[1].replace(".", "-")
+            folder = f"{date_folder}/{domain}"
+        else:
+            folder = f"{date_folder}/non-identifie"
+
+        storage_path = f"{folder}/{safe_filename}"
 
         # 3. Upload Supabase Storage REST API
         upload_url = f"{settings.supabase_url}/storage/v1/object/{bucket}/{storage_path}"

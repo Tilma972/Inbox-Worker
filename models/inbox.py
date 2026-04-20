@@ -32,7 +32,8 @@ class AttachmentStoreRequest(BaseModel):
     filename: str
     mime_type: Optional[str] = "application/octet-stream"
     bucket: str = "pj-recues"
-    path_prefix: Optional[str] = None  # ex: "bdc-recus/2026-04"
+    entreprise_id: Optional[str] = None   # UUID CRM — utilisé dans le path
+    sender_email: Optional[str] = None    # email expéditeur — suffixe lisible si pas d'entreprise_id
 
 
 class AttachmentStoreResponse(BaseModel):

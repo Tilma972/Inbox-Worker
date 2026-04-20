@@ -146,7 +146,8 @@ async def store_attachment(request: AttachmentStoreRequest):
             filename=request.filename,
             mime_type=request.mime_type or "application/octet-stream",
             bucket=request.bucket,
-            path_prefix=request.path_prefix,
+            entreprise_id=request.entreprise_id,
+            sender_email=request.sender_email,
         )
         return AttachmentStoreResponse(**result)
     except Exception as e:
