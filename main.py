@@ -3,7 +3,9 @@ Inbox Worker — FastAPI service
 Lecture Gmail (search, message, thread, draft, labels) pour FlowChat.
 Remplace les appels gog CLI dans les skills.
 """
-from fastapi import FastAPI, HTTPException, Query, status
+import os
+import secrets
+from fastapi import FastAPI, HTTPException, Query, status, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 import logging
 from googleapiclient.errors import HttpError
@@ -41,12 +43,46 @@ app.add_middleware(
 )
 
 
+# --- Authentification Bearer ---
+# Token partagé via variable d'environnement INBOX_WORKER_TOKEN.
+# Si la variable est vide au démarrage → tous les endpoints protégés renvoient 503.
+# Les endpoints / et /health restent ouverts (healthchecks Coolify).
+INBOX_WORKER_TOKEN = os.environ.get("INBOX_WORKER_TOKEN", "").strip()
+
+
+async def require_bearer(authorization: str = Header(default="")):
+    """Vérifie le Bearer token via comparaison constant-time (anti timing-attack)."""
+    if not INBOX_WORKER_TOKEN:
+        logger.error("INBOX_WORKER_TOKEN non configuré côté serveur — endpoints protégés indisponibles")
+        raise HTTPException(
+            status_code=503,
+            detail="Worker non configuré : INBOX_WORKER_TOKEN manquant côté serveur",
+        )
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+    token = authorization[len("Bearer "):].strip()
+    if not secrets.compare_digest(token, INBOX_WORKER_TOKEN):
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+
+@app.get("/")
+async def root():
+    """Info endpoint — ouvert pour identification."""
+    return {
+        "service": settings.app_name,
+        "status": "healthy",
+        "version": "1.0.0",
+        "auth_required": bool(INBOX_WORKER_TOKEN),
+    }
+
+
 @app.get("/health")
 async def health():
+    """Health check — ouvert pour monitoring/Coolify."""
     return {"status": "healthy", "services": {"gmail_read": "ready"}}
 
 
-@app.get("/inbox/search", response_model=list[ThreadSummary])
+@app.get("/inbox/search", response_model=list[ThreadSummary], dependencies=[Depends(require_bearer)])
 async def search_inbox(
     q: str = Query(default="is:unread", description="Gmail search query"),
     max: int = Query(default=20, ge=1, le=100, description="Max results"),
@@ -61,7 +97,7 @@ async def search_inbox(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/inbox/message/{message_id}", response_model=MessageDetail)
+@app.get("/inbox/message/{message_id}", response_model=MessageDetail, dependencies=[Depends(require_bearer)])
 async def get_message(message_id: str):
     try:
         logger.info("📨 get message %s", message_id)
@@ -75,7 +111,7 @@ async def get_message(message_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/inbox/thread/{thread_id}", response_model=ThreadDetail)
+@app.get("/inbox/thread/{thread_id}", response_model=ThreadDetail, dependencies=[Depends(require_bearer)])
 async def get_thread(
     thread_id: str,
     full: bool = Query(default=False, description="Include full message body (coûteux)"),
@@ -92,7 +128,7 @@ async def get_thread(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/drafts", response_model=DraftResponse, status_code=status.HTTP_201_CREATED)
+@app.post("/drafts", response_model=DraftResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_bearer)])
 async def create_draft(request: DraftRequest):
     try:
         logger.info("📝 create draft to=%s subject=%r", request.to, request.subject)
@@ -110,7 +146,7 @@ async def create_draft(request: DraftRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/inbox/attachment/{message_id}/{attachment_id}", response_model=AttachmentContent)
+@app.get("/inbox/attachment/{message_id}/{attachment_id}", response_model=AttachmentContent, dependencies=[Depends(require_bearer)])
 async def get_attachment(
     message_id: str,
     attachment_id: str,
@@ -129,7 +165,7 @@ async def get_attachment(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/inbox/attachment/store", response_model=AttachmentStoreResponse)
+@app.post("/inbox/attachment/store", response_model=AttachmentStoreResponse, dependencies=[Depends(require_bearer)])
 async def store_attachment(request: AttachmentStoreRequest):
     """
     Télécharge une PJ depuis Gmail et la stocke dans Supabase Storage.
@@ -155,7 +191,7 @@ async def store_attachment(request: AttachmentStoreRequest):
         return AttachmentStoreResponse(success=False, error=str(e))
 
 
-@app.get("/inbox/labels", response_model=list[LabelItem])
+@app.get("/inbox/labels", response_model=list[LabelItem], dependencies=[Depends(require_bearer)])
 async def list_labels():
     try:
         return gmail_read_service.list_labels()
