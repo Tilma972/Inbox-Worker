@@ -59,7 +59,7 @@ async def root():
         "service": settings.app_name,
         "status": "healthy",
         "version": "1.0.0",
-        "auth_required": bool(INBOX_WORKER_TOKEN),
+        "auth_required": bool(settings.worker_auth_key),
     }
 
 
