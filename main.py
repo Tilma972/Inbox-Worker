@@ -167,7 +167,7 @@ async def store_attachment(request: AttachmentStoreRequest):
             message_id=request.message_id,
             attachment_id=request.attachment_id,
             filename=request.filename,
-            mime_type=request.mime_type or "application/octet-stream",
+            mime_type=request.mime_type,
             bucket=request.bucket,
             entreprise_id=request.entreprise_id,
             sender_email=request.sender_email,

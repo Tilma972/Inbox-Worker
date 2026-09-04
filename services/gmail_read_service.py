@@ -4,6 +4,7 @@ Même architecture que GmailService (email-worker), scopes différents.
 """
 import base64
 import logging
+import mimetypes
 from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -272,18 +273,47 @@ class GmailReadService:
         self,
         message_id: str,
         attachment_id: str,
-        filename: str,
-        mime_type: str,
-        bucket: str,
+        filename: Optional[str] = None,
+        mime_type: Optional[str] = None,
+        bucket: str = "pj-recues",
         entreprise_id: Optional[str] = None,
         sender_email: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Télécharge une PJ Gmail et l'upload dans Supabase Storage.
         Retourne storage_path et storage_bucket en cas de succès.
+        filename/mime_type optionnels : fallback automatique sur les
+        métadonnées Gmail du message ( AttachmentInfo), puis extension du
+        fichier pour le mime. Plus besoin de les passer manuellement.
         """
         if not settings.supabase_url or not settings.supabase_key:
             return {"success": False, "error": "Supabase storage non configuré (SUPABASE_URL / SUPABASE_KEY manquants)"}
+
+        # 0. Fallback filename/mime depuis les métadonnées Gmail du message
+        if not filename or not mime_type:
+            try:
+                msg = self.get_message(message_id)
+                att_meta = next(
+                    (a for a in (msg.get("attachments") or [])
+                     if a.get("attachment_id") == attachment_id),
+                    None,
+                )
+                if att_meta:
+                    filename = filename or att_meta.get("filename")
+                    mime_type = mime_type or att_meta.get("mime_type")
+            except Exception as exc:
+                logger.warning("fallback métadonnées Gmail échoué pour %s: %s", message_id, exc)
+
+        if not filename:
+            return {
+                "success": False,
+                "error": "filename introuvable : absent de la requête ET des métadonnées Gmail du message",
+            }
+
+        # Mime : explicite > métadonnées Gmail > extension du fichier > octet-stream
+        if not mime_type:
+            guessed, _ = mimetypes.guess_type(filename)
+            mime_type = guessed or "application/octet-stream"
 
         # 1. Téléchargement depuis Gmail
         raw = self.get_attachment(message_id, attachment_id, filename, mime_type)

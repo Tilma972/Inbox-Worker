@@ -29,8 +29,8 @@ class AttachmentContent(BaseModel):
 class AttachmentStoreRequest(BaseModel):
     message_id: str
     attachment_id: str
-    filename: str
-    mime_type: Optional[str] = "application/octet-stream"
+    filename: Optional[str] = None   # optionnel : fallback sur les métadonnées Gmail
+    mime_type: Optional[str] = None  # optionnel : métadonnées Gmail > extension > octet-stream
     bucket: str = "pj-recues"
     entreprise_id: Optional[str] = None   # UUID CRM — utilisé dans le path
     sender_email: Optional[str] = None    # email expéditeur — suffixe lisible si pas d'entreprise_id
