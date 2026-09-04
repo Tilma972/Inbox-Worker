@@ -290,14 +290,23 @@ class GmailReadService:
             return {"success": False, "error": "Supabase storage non configuré (SUPABASE_URL / SUPABASE_KEY manquants)"}
 
         # 0. Fallback filename/mime depuis les métadonnées Gmail du message
+        # ⚠️ Les attachment_id Gmail NE SONT PAS stables entre deux messages().get
+        # (Gmail en régénère un différent à chaque lecture). On matche donc par id
+        # d'abord, puis on retombe sur la PJ unique si le message n'en a qu'une.
         if not filename or not mime_type:
             try:
                 msg = self.get_message(message_id)
+                atts = msg.get("attachments") or []
                 att_meta = next(
-                    (a for a in (msg.get("attachments") or [])
-                     if a.get("attachment_id") == attachment_id),
+                    (a for a in atts if a.get("attachment_id") == attachment_id),
                     None,
                 )
+                if att_meta is None and len(atts) == 1:
+                    att_meta = atts[0]
+                if att_meta is None and atts:
+                    # Plusieurs PJ sans match d'id : prendre la plus grosse (la vraie PJ),
+                    # les petites pièces (logos inline) sont exclues par ce choix.
+                    att_meta = max(atts, key=lambda a: a.get("size") or 0)
                 if att_meta:
                     filename = filename or att_meta.get("filename")
                     mime_type = mime_type or att_meta.get("mime_type")
