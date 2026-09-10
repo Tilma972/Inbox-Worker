@@ -125,6 +125,7 @@ async def create_draft(request: DraftRequest):
             body=request.body,
             reply_to_message_id=request.reply_to_message_id,
             thread_id=request.thread_id,
+            attachments=[a.model_dump() for a in (request.attachments or [])] or None,
         )
     except HttpError as e:
         raise HTTPException(status_code=e.resp.status, detail=str(e))
