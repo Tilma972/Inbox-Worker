@@ -209,6 +209,7 @@ class GmailReadService:
         body: str,
         reply_to_message_id: Optional[str] = None,
         thread_id: Optional[str] = None,
+        attachments: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """
         Crée un brouillon Gmail.
@@ -217,14 +218,41 @@ class GmailReadService:
         """
         service = self._get_service()
 
-        msg = MIMEMultipart("alternative")
+        # texte brut dégrossi pour la partie alternative (rendu correct partout)
+        plain = re.sub(r"<[^>]+>", " ", body)
+        plain = re.sub(r"\s+", " ", plain).strip()
+
+        alt = MIMEMultipart("alternative")
+        alt.attach(MIMEText(plain, "plain", "utf-8"))
+        alt.attach(MIMEText(body, "html", "utf-8"))
+
+        if attachments:
+            msg = MIMEMultipart("mixed")
+            msg.attach(alt)
+            for att in attachments:
+                fname = (att.get("filename") or "fichier").encode(
+                    "ascii", "ignore").decode().strip() or "fichier"
+                ctype = att.get("content_type") or "application/pdf"
+                maintype, _, subtype = ctype.partition("/")
+                if not subtype:
+                    maintype, subtype = ctype, "octet-stream"
+                try:
+                    payload = base64.b64decode(att.get("content") or "", validate=True)
+                except Exception:
+                    raise ValueError(f"attachment invalide (base64): {fname}")
+                if not payload:
+                    raise ValueError(f"attachment vide: {fname}")
+                msg.add_attachment(payload, maintype=maintype, subtype=subtype,
+                                   filename=fname)
+        else:
+            msg = alt
+
         msg["To"] = to
         msg["From"] = self.account
         msg["Subject"] = subject
         if reply_to_message_id:
             msg["In-Reply-To"] = reply_to_message_id
             msg["References"] = reply_to_message_id
-        msg.attach(MIMEText(body, "html", "utf-8"))
 
         raw = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
         draft_body: Dict[str, Any] = {"message": {"raw": raw}}
