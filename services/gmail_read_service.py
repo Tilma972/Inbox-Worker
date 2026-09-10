@@ -2,6 +2,7 @@
 Gmail Read Service — gmail.readonly + gmail.compose
 Même architecture que GmailService (email-worker), scopes différents.
 """
+import re
 import base64
 import logging
 import mimetypes
