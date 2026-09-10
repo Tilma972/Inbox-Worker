@@ -9,6 +9,8 @@ import mimetypes
 from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
 from typing import Optional, List, Dict, Any
 
 import httpx
@@ -243,8 +245,11 @@ class GmailReadService:
                     raise ValueError(f"attachment invalide (base64): {fname}")
                 if not payload:
                     raise ValueError(f"attachment vide: {fname}")
-                msg.add_attachment(payload, maintype=maintype, subtype=subtype,
-                                   filename=fname)
+                part = MIMEBase(maintype, subtype)
+                part.set_payload(payload)
+                encoders.encode_base64(part)
+                part.add_header("Content-Disposition", "attachment", filename=fname)
+                msg.attach(part)
         else:
             msg = alt
 
