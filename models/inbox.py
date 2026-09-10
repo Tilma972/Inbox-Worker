@@ -67,12 +67,19 @@ class ThreadDetail(BaseModel):
     messages: List[MessageDetail]
 
 
+class DraftAttachment(BaseModel):
+    filename: str
+    content: str                              # base64 ASCII
+    content_type: str = "application/pdf"
+
+
 class DraftRequest(BaseModel):
     to: str
     subject: str
     body: str                                # HTML content
     reply_to_message_id: Optional[str] = None  # RFC 2822 Message-ID of original message
     thread_id: Optional[str] = None           # Gmail threadId to attach draft to
+    attachments: Optional[List[DraftAttachment]] = None  # optional files (base64)
 
 
 class DraftResponse(BaseModel):
